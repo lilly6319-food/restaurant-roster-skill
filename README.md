@@ -2,7 +2,7 @@
 
 > 把店長在聊天裡貼上的「給班文字」，整理成符合店規的週班表草案，自動標出缺人、崗位缺口與工時風險，並輸出固定版型的 Excel。
 
-   **🔗 互動展示頁：** [點此開啟](https://claude.ai/artifact/NsbASkLsi9vxWM5BkWm4E7)
+**🔗 互動展示頁：** [點此開啟](https://claude.ai/artifact/NsbASkLsi9vxWM5BkWm4E7)
 
 ---
 
