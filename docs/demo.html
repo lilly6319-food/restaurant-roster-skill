@@ -1,0 +1,349 @@
+<title>餐廳排班小幫手</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 單欄說明 → 「給班文字 → 班表」對照 → 可編輯週班表（仿店內 Excel：姓名直排、日期橫排、每人兩列）→ 規則檢核 */
+:root{
+  --bg:#f6f7f3; --paper:#ffffff; --ink:#1f2420; --muted:#5f685f; --line:#d9ddd3;
+  --basil:#3f6b3a; --basil-soft:#e5eedf; --weekend:#fdebd8;
+  --gap:#b3261e; --gap-soft:#fbe3e0; --warn:#8a5a00; --warn-soft:#fbf0d3; --ok:#2e6b34;
+  --f-display:"LXGW WenKai TC","Noto Serif TC",serif;
+  --f-body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#151815; --paper:#1d211d; --ink:#e6eae2; --muted:#a0a99d; --line:#343a33;
+  --basil:#8fc286; --basil-soft:#26331f; --weekend:#3a2c1e;
+  --gap:#ff8a80; --gap-soft:#3d1f1c; --warn:#f0c46a; --warn-soft:#352b14; --ok:#8fc286; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#151815; --paper:#1d211d; --ink:#e6eae2; --muted:#a0a99d; --line:#343a33;
+  --basil:#8fc286; --basil-soft:#26331f; --weekend:#3a2c1e;
+  --gap:#ff8a80; --gap-soft:#3d1f1c; --warn:#f0c46a; --warn-soft:#352b14; --ok:#8fc286; color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.6}
+.wrap{max-width:1180px;margin:0 auto;padding-block:40px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:40px}
+h1,h2{font-family:var(--f-display);text-wrap:balance;margin:0;font-weight:700}
+h1{font-size:clamp(30px,5vw,44px);line-height:1.2}
+h2{font-size:24px}
+p{margin:0;max-width:65ch}
+.eyebrow{font-size:12px;letter-spacing:.12em;color:var(--basil);font-weight:700}
+header{display:grid;gap:12px}
+.lede{color:var(--muted);font-size:17px}
+section{display:grid;gap:16px;min-width:0}
+.compare{display:grid;grid-template-columns:1fr auto 1.3fr;gap:16px;align-items:stretch}
+.compare>*{min-width:0}
+.panel{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:16px;display:grid;gap:8px;align-content:start}
+.panel h3{margin:0;font-size:13px;letter-spacing:.08em;color:var(--muted)}
+pre.raw{margin:0;white-space:pre-wrap;font-family:var(--f-body);font-size:13.5px;line-height:1.7}
+.arrow{align-self:center;font-family:var(--f-display);font-size:28px;color:var(--basil)}
+.mini{display:grid;gap:6px;font-size:13.5px}
+.mini div{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.tag{font-size:12px;padding:1px 8px;border-radius:99px;background:var(--basil-soft);color:var(--basil);font-weight:500;white-space:nowrap}
+.tag.gap{background:var(--gap-soft);color:var(--gap)}
+.tag.warn{background:var(--warn-soft);color:var(--warn)}
+@media (max-width:760px){.compare{grid-template-columns:1fr}.arrow{transform:rotate(90deg);justify-self:center}}
+
+.toolbar{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.summary{display:flex;gap:8px;flex-wrap:wrap}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:6px;padding:6px 14px}
+button:hover{border-color:var(--basil)}
+button:focus-visible,select:focus-visible,td.cell:focus-visible{outline:2px solid var(--basil);outline-offset:1px}
+.tablebox{overflow-x:auto;background:var(--paper);border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;font-size:13px;min-width:860px;width:100%;font-variant-numeric:tabular-nums}
+th,td{border:1px solid var(--line);padding:4px 6px;text-align:center;white-space:nowrap}
+thead th{background:var(--bg);font-weight:500}
+th.we,td.we{background:var(--weekend)}
+th.name{text-align:left;min-width:92px}
+.role{display:block;font-size:11px;color:var(--muted);font-weight:400}
+td.cell{cursor:pointer;font-family:var(--f-mono);font-size:12.5px}
+td.cell:hover{box-shadow:inset 0 0 0 2px var(--basil)}
+td.pos{font-size:12px;color:var(--muted)}
+td.pos.bad{color:var(--gap);font-weight:700}
+td.off{color:var(--muted)}
+tr.sep td,tr.sep th{border-bottom:2px solid var(--line)}
+td.stat{font-family:var(--f-mono);font-size:12px}
+td.stat.bad{background:var(--gap-soft);color:var(--gap);font-weight:700}
+td.stat.pend{background:var(--warn-soft);color:var(--warn)}
+tr.gaprow th{background:var(--bg);font-weight:500}
+tr.gaprow td{font-family:var(--f-mono);font-size:12px}
+tr.gaprow td.bad{background:var(--gap-soft);color:var(--gap);font-weight:700}
+.hint{font-size:13px;color:var(--muted)}
+
+.editor{background:var(--paper);border:2px solid var(--basil);border-radius:6px;padding:14px 16px;display:flex;gap:12px;flex-wrap:wrap;align-items:end}
+.editor label{display:grid;gap:2px;font-size:12px;color:var(--muted)}
+.editor select{font:inherit;font-size:14px;padding:4px 6px;border:1px solid var(--line);border-radius:4px;background:var(--paper);color:var(--ink)}
+.editor strong{font-family:var(--f-display);font-size:18px;align-self:center}
+
+.checks{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.check{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:12px 14px;display:grid;gap:6px;align-content:start}
+.check h4{margin:0;font-size:14px;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.check ul{margin:0;padding-left:18px;font-size:13px;color:var(--muted)}
+.check li.bad{color:var(--gap)}
+.check li.pend{color:var(--warn)}
+.rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px 28px;font-size:14px}
+.rules dt{font-weight:700}
+.rules dd{margin:0 0 4px;color:var(--muted)}
+footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">CLAUDE SKILL · 作品展示</div>
+  <h1>餐廳排班小幫手</h1>
+  <p class="lede">店長在聊天裡貼上員工的給班文字，Claude 依店規排出週班表草案，並自動標出缺人、崗位缺口與工時風險。下方是一週的示範班表，點任一格就能改班，檢核結果會即時更新。</p>
+</header>
+
+<section>
+  <h2>從一段文字到一張班表</h2>
+  <div class="compare">
+    <div class="panel">
+      <h3>輸入：店長貼上的給班文字</h3>
+<pre class="raw">排 10/26（一）～11/1（日）
+正職：阿凱 想休週日；小芸 二、四、六休
+店長 Mia：二、四、六可以上
+小安：一、三、日都可以，週四不行
+阿哲：除了週二整天都行
+小魚：週四不行，其他都可以
+小敏：一～日晚班，週末可以早點來
+阿翔：二、三、五晚，週六日整天
+……（共 10 人）</pre>
+    </div>
+    <div class="arrow" aria-hidden="true">→</div>
+    <div class="panel">
+      <h3>輸出：班表草案＋待決事項</h3>
+      <div class="mini">
+        <div><span class="tag">已排</span>7 天、10 人，每天 1 位 10:00 開店、正職或店長在班</div>
+        <div><span class="tag">已排</span>週末兩位 11:00 起班者分屬前場與內場</div>
+        <div><span class="tag gap">缺人／待補</span>10/29（四）晚餐 4 人，規定 5 人：晚-1人</div>
+        <div><span class="tag warn">待核對</span>工讀週工時以週日至週六計，缺 10/25 資料</div>
+        <div><span class="tag warn">需店長決定</span>週四晚是否請阿翔加班或由店長延長</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="toolbar">
+    <h2>週班表 10/26～11/1</h2>
+    <div class="summary" id="summary"></div>
+  </div>
+  <p class="hint">每人兩列：上排是上下班時間，下排是尖峰主要崗位（午；晚）。橘底為週末。點時間格可修改班別與崗位。</p>
+  <div id="editor" class="editor" hidden></div>
+  <div class="tablebox"><table id="roster"></table></div>
+  <div><button id="reset" type="button">恢復範例班表</button></div>
+</section>
+
+<section>
+  <h2>規則檢核</h2>
+  <div class="checks" id="checks"></div>
+</section>
+
+<section>
+  <h2>這份 skill 寫進了哪些規則</h2>
+  <dl class="rules">
+    <div><dt>開店</dt><dd>每天恰好 1 位 10:00 開店，且須具獨立開店資格。</dd></div>
+    <div><dt>11:00 起班</dt><dd>平日恰好 1 位；週末 2 位，一位前場（控場／外場／吧台），一位內場（司爐／炸區／拍區／料區）。10:00 已在班或 11:30 才到都不算。</dd></div>
+    <div><dt>正職覆蓋</dt><dd>每天至少一位正職在班，皮皮或宜靜優先；兩人都休時由店長補。</dd></div>
+    <div><dt>尖峰人數</dt><dd>平日午 4；一至四晚 5；五晚 6；週末午 6～7（以 7 優先）、晚 7。休息中不算在崗。</dd></div>
+    <div><dt>崗位</dt><dd>七個正式崗位，一人一個尖峰時段只算一崗；會做不等於已指派。</dd></div>
+    <div><dt>工時週期</dt><dd>正職週一至週日、每週最多 48 小時；工讀週日至週六 16～40 小時、至少 2 天休，跨週連續上班不得達 6 天。</dd></div>
+    <div><dt>缺口處理</dt><dd>排不出來就保留缺口並分類，不自動突破員工的不可排時間。</dd></div>
+    <div><dt>檔案管理</dt><dd>確認版不可覆寫，校正另存；月表空白代表未匯入，0 代表確認未排班。</dd></div>
+  </dl>
+</section>
+
+<footer>示範資料為虛構人名與簡化的尖峰時段（午 12:00–13:30、晚 18:00–20:00）。實際 skill 由 Claude 讀取店規文件後執行，並輸出固定版型的 Excel。</footer>
+</div>
+
+<script>
+const DAYS=[["10/26","一"],["10/27","二"],["10/28","三"],["10/29","四"],["10/30","五"],["10/31","六"],["11/1","日"]];
+const WEEKEND=[false,false,false,false,false,true,true];
+const LUNCH_NEED=[[4,4],[4,4],[4,4],[4,4],[4,4],[6,7],[6,7]];
+const DINNER_NEED=[5,5,5,5,6,7,7];
+const FRONT=["控場","外場","吧台"], BACK=["司爐","炸區","拍區","料區"], POSTS=[...FRONT,...BACK];
+// 班別：起、迄、休息起、休息迄（小時）
+const SHIFTS={
+ O:{t:"10:00-19:00",s:10,e:19,b:[14.5,15.5]},
+ E:{t:"11:00-20:00",s:11,e:20,b:[15,16]},
+ F:{t:"11:00-21:00",s:11,e:21,b:[15,16]},
+ H:{t:"11:30-21:30",s:11.5,e:21.5,b:[15.5,16.5]},
+ P:{t:"12:00-22:00",s:12,e:22,b:[15.5,16.5]},
+ N:{t:"13:00-22:00",s:13,e:22,b:[16,17]},
+ L:{t:"11:30-15:00",s:11.5,e:15,b:null},
+ M:{t:"12:00-15:00",s:12,e:15,b:null},
+ W:{t:"16:00-22:00",s:16,e:22,b:null},
+ D:{t:"17:00-22:00",s:17,e:22,b:null}
+};
+const STAFF=[
+ {id:"kai",n:"阿凱",r:"正職",ft:1,open:1,sk:["控場","外場","吧台","司爐"]},
+ {id:"yun",n:"小芸",r:"正職",ft:1,open:1,sk:["料區","炸區","拍區","司爐","控場"]},
+ {id:"mia",n:"Mia",r:"店長",ft:1,open:1,sk:POSTS},
+ {id:"an",n:"小安",r:"工讀",sk:["外場","吧台"]},
+ {id:"zhe",n:"阿哲",r:"工讀",sk:["司爐","炸區"]},
+ {id:"jia",n:"佳佳",r:"工讀",sk:["外場","控場"]},
+ {id:"yu",n:"小魚",r:"工讀",sk:["拍區","料區"]},
+ {id:"hao",n:"阿豪",r:"工讀",sk:["炸區","拍區","司爐"]},
+ {id:"min",n:"小敏",r:"工讀",sk:["吧台","外場"]},
+ {id:"xiang",n:"阿翔",r:"工讀",minOff:3,sk:["料區","司爐"]}
+];
+// [班別, 午崗, 晚崗]
+const SAMPLE={
+ kai:[["O","控場",""],["N","","控場"],["N","","控場"],["O","控場",""],["N","","控場"],["E","外場","外場"],null],
+ yun:[["N","","控場"],null,["O","司爐",""],null,["O","料區",""],null,["O","料區",""]],
+ mia:[null,["O","控場",""],null,["N","","控場"],null,["O","控場",""],null],
+ an:[["H","外場","外場"],null,["F","外場","外場"],null,["H","外場","外場"],null,["E","外場","外場"]],
+ zhe:[["F","司爐","司爐"],null,["H","炸區","司爐"],["H","司爐","司爐"],["L","司爐",""],["F","司爐","司爐"],["P","司爐","司爐"]],
+ jia:[null,["H","外場","外場"],null,["F","外場","外場"],null,["D","","控場"],["H","控場","控場"]],
+ yu:[["L","拍區",""],["D","","拍區"],["L","拍區",""],null,["D","","拍區"],["P","拍區","拍區"],["P","拍區","拍區"]],
+ hao:[["D","","炸區"],["F","炸區","炸區"],null,["H","炸區","炸區"],["D","","炸區"],["H","炸區","炸區"],["F","炸區","炸區"]],
+ min:[["D","","吧台"],["D","","吧台"],["D","","吧台"],null,["F","吧台","吧台"],["H","吧台","吧台"],["H","吧台","吧台"]],
+ xiang:[null,["L","料區",""],["D","","料區"],null,["D","","料區"],["P","料區","料區"],["D","","料區"]]
+};
+let plan=JSON.parse(JSON.stringify(SAMPLE));
+try{const s=localStorage.getItem("roster-demo");if(s)plan=JSON.parse(s)}catch(e){}
+const save=()=>{try{localStorage.setItem("roster-demo",JSON.stringify(plan))}catch(e){}};
+
+const net=sh=>{const x=SHIFTS[sh];return x.e-x.s-(x.b?x.b[1]-x.b[0]:0)};
+const onDuty=(sh,ws,we)=>{const x=SHIFTS[sh];if(x.s>ws||x.e<we)return false;if(x.b&&x.b[0]<we&&x.b[1]>ws)return false;return true};
+const fmt=h=>{const r=Math.round(h*10)/10;return Number.isInteger(r)?r:r.toFixed(1)};
+
+function evaluate(){
+ const days=DAYS.map((d,i)=>{
+  const e=STAFF.map(p=>({p,a:plan[p.id][i]})).filter(x=>x.a);
+  const openers=e.filter(x=>SHIFTS[x.a[0]].s===10);
+  const elevens=e.filter(x=>SHIFTS[x.a[0]].s===11);
+  const ftOn=e.filter(x=>x.p.ft);
+  const lunch=e.filter(x=>onDuty(x.a[0],12,13.5));
+  const dinner=e.filter(x=>onDuty(x.a[0],18,20));
+  return {i,e,openers,elevens,ftOn,lunch,dinner};
+ });
+ const issues={open:[],eleven:[],ft:[],meal:[],skill:[],hours:[]};
+ const gapL=[],gapD=[];
+ days.forEach(d=>{
+  const lab=DAYS[d.i][0]+"（"+DAYS[d.i][1]+"）";
+  if(d.openers.length!==1)issues.open.push(["bad",lab+"：10:00 起班 "+d.openers.length+" 人，規定恰好 1 人"]);
+  else if(!d.openers[0].p.open)issues.open.push(["bad",lab+"："+d.openers[0].p.n+" 不具獨立開店資格"]);
+  else issues.open.push(["ok",lab+"："+d.openers[0].p.n]);
+  const need11=WEEKEND[d.i]?2:1;
+  if(d.elevens.length!==need11)issues.eleven.push(["bad",lab+"：11:00 起班缺口，現有 "+d.elevens.length+" 人，規定 "+need11+" 人"]);
+  else if(WEEKEND[d.i]){
+   const pos=d.elevens.map(x=>x.a[1]);
+   const hasF=pos.some(p=>FRONT.includes(p)),hasB=pos.some(p=>BACK.includes(p));
+   if(!(hasF&&hasB))issues.eleven.push(["bad",lab+"：11:00 起班崗位缺口，缺"+(hasF?"內場組":"前場組")]);
+   else issues.eleven.push(["ok",lab+"："+d.elevens.map(x=>x.p.n+"（"+x.a[1]+"）").join("、")]);
+  } else issues.eleven.push(["ok",lab+"："+d.elevens[0].p.n]);
+  if(!d.ftOn.length)issues.ft.push(["bad",lab+"：當日缺正職／店長"]);
+  else issues.ft.push(["ok",lab+"："+d.ftOn.map(x=>x.p.n).join("、")]);
+  // 餐期
+  const meal=(list,idx,need,name,arr)=>{
+   const [lo,hi]=need;const n=list.length;const assigned=list.map(x=>x.a[idx]).filter(Boolean);
+   const parts=[];
+   if(n<lo)parts.push("-"+(lo-n)+"人");
+   if(n>hi)parts.push("+"+(n-hi)+"人");
+   const unassigned=list.filter(x=>!x.a[idx]);
+   if(WEEKEND[d.i]){const reqPosts=n>=7?POSTS:POSTS.filter(p=>p!=="控場");reqPosts.forEach(p=>{if(!assigned.includes(p)&&n>=lo)parts.push("-1"+p)})}
+   const dup=assigned.filter((p,k)=>assigned.indexOf(p)!==k);
+   arr.push(parts.length?name+parts.join("\n"):name+"-0");
+   if(parts.length)issues.meal.push(["bad",lab+" "+(name==="午"?"午餐":"晚餐")+" "+n+" 人（規定 "+(lo===hi?lo:lo+"～"+hi)+"）"+parts.join(" ")]);
+   if(unassigned.length)issues.skill.push(["pend",lab+" "+(name==="午"?"午":"晚")+"："+unassigned.map(x=>x.p.n).join("、")+" 在崗但未指派主要崗位"]);
+   if(dup.length&&!WEEKEND[d.i]){}
+  };
+  meal(d.lunch,1,LUNCH_NEED[d.i],"午",gapL);
+  meal(d.dinner,2,[DINNER_NEED[d.i],DINNER_NEED[d.i]],"晚",gapD);
+  d.e.forEach(x=>{[1,2].forEach(k=>{const p=x.a[k];if(p&&!x.p.sk.includes(p))issues.skill.push(["bad",lab+"："+x.p.n+" 未具「"+p+"」能力"])})});
+ });
+ if(!issues.meal.length)issues.meal.push(["ok","所有餐期人數與崗位符合"]);
+ if(!issues.skill.length)issues.skill.push(["ok","指派崗位皆在個人能力範圍內"]);
+ // 工時
+ const stats={};
+ STAFF.forEach(p=>{
+  const sh=plan[p.id];const work=sh.filter(Boolean);
+  const hrs=work.reduce((s,a)=>s+net(a[0]),0);
+  let st={h:hrs,d:work.length,cls:"",note:""};
+  if(p.ft){
+   const over=work.filter(a=>net(a[0])>8);
+   if(hrs>48){st.cls="bad";issues.hours.push(["bad",p.n+"：週工時 "+fmt(hrs)+" 小時，超過 48"])}
+   if(work.length>6){st.cls="bad";issues.hours.push(["bad",p.n+"：連續 7 天上班，缺例假"])}
+   if(over.length){st.cls="bad";issues.hours.push(["bad",p.n+"：有班次淨工時超過 8 小時"])}
+   if(!st.cls)issues.hours.push(["ok",p.n+"（週一至週日）："+fmt(hrs)+" 小時／"+work.length+" 天"]);
+  }else{
+   // 工讀：週日至週六，10/25（日）資料缺
+   const satIdx=5;const known=sh.slice(0,satIdx+1).filter(Boolean);
+   const kh=known.reduce((s,a)=>s+net(a[0]),0);
+   st.h=kh;st.d=known.length;st.cls="pend";
+   let run=0,maxRun=0;sh.forEach(a=>{run=a?run+1:0;maxRun=Math.max(maxRun,run)});
+   const off=6-known.length; // 10/26-10/31 共6天，另加未知的10/25
+   const minOff=p.minOff||2;
+   if(kh>40){st.cls="bad";issues.hours.push(["bad",p.n+"：週一至六已 "+fmt(kh)+" 小時，超過 40"])}
+   else if(maxRun>=6){st.cls="bad";issues.hours.push(["bad",p.n+"：連續上班 "+maxRun+" 天"])}
+   else if(off+1<minOff){st.cls="bad";issues.hours.push(["bad",p.n+"：週期內休假不足 "+minOff+" 天"])}
+   else issues.hours.push(["pend",p.n+"（10/25～10/31）："+fmt(kh)+" 小時＋10/25 待核對"+(p.minOff?"，須至少休 3 天":"")]);
+  }
+  stats[p.id]=st;
+ });
+ return {issues,gapL,gapD,stats};
+}
+
+function render(){
+ const {issues,gapL,gapD,stats}=evaluate();
+ const t=document.getElementById("roster");
+ let h="<thead><tr><th class='name'>姓名</th>";
+ DAYS.forEach((d,i)=>h+="<th class='"+(WEEKEND[i]?"we":"")+"'>"+d[0]+"<br>"+d[1]+"</th>");
+ h+="<th>週工時</th><th>工作天</th></tr></thead><tbody>";
+ STAFF.forEach(p=>{
+  const st=stats[p.id];
+  h+="<tr><th class='name' rowspan='2'>"+p.n+"<span class='role'>"+p.r+"</span></th>";
+  plan[p.id].forEach((a,i)=>{
+   const we=WEEKEND[i]?" we":"";
+   h+=a?"<td tabindex='0' class='cell"+we+"' data-p='"+p.id+"' data-d='"+i+"'>"+SHIFTS[a[0]].t+"</td>"
+       :"<td tabindex='0' class='cell off"+we+"' data-p='"+p.id+"' data-d='"+i+"'>X</td>";
+  });
+  h+="<td class='stat "+st.cls+"' rowspan='2'>"+fmt(st.h)+(p.ft?"":"*")+"</td><td class='stat "+st.cls+"' rowspan='2'>"+st.d+"</td></tr><tr class='sep'>";
+  plan[p.id].forEach((a,i)=>{
+   const we=WEEKEND[i]?" we":"";
+   if(!a){h+="<td class='pos"+we+"'></td>";return}
+   const ps=[a[1],a[2]].filter(Boolean);
+   const bad=ps.some(x=>!p.sk.includes(x));
+   const txt=ps.length?ps.filter((x,k)=>ps.indexOf(x)===k).join("；"):"—";
+   h+="<td class='pos"+we+(bad?" bad":"")+"'>"+txt+"</td>";
+  });
+  h+="</tr>";
+ });
+ h+="<tr class='gaprow'><th class='name'>缺口・午</th>"+gapL.map(g=>"<td class='"+(g==="午-0"?"":"bad")+"'>"+g.replace(/\n/g,"<br>")+"</td>").join("")+"<td colspan='2' rowspan='2' class='hint'>* 工讀以週日至週六計</td></tr>";
+ h+="<tr class='gaprow'><th class='name'>缺口・晚</th>"+gapD.map(g=>"<td class='"+(g==="晚-0"?"":"bad")+"'>"+g.replace(/\n/g,"<br>")+"</td>").join("")+"</tr></tbody>";
+ t.innerHTML=h;
+
+ const groups=[["開店人員",issues.open],["11:00 起班",issues.eleven],["正職／店長覆蓋",issues.ft],["餐期人數與崗位",issues.meal],["崗位能力",issues.skill],["工時與休假",issues.hours]];
+ let nb=0,np=0;
+ document.getElementById("checks").innerHTML=groups.map(([name,list])=>{
+  const b=list.filter(x=>x[0]==="bad").length,pd=list.filter(x=>x[0]==="pend").length;nb+=b;np+=pd;
+  const tag=b?"<span class='tag gap'>缺人／待補 "+b+"</span>":pd?"<span class='tag warn'>待核對 "+pd+"</span>":"<span class='tag'>通過</span>";
+  const shown=list.filter(x=>x[0]!=="ok");
+  const items=(shown.length?shown:list).map(x=>"<li class='"+x[0]+"'>"+x[1]+"</li>").join("");
+  return "<div class='check'><h4>"+name+tag+"</h4><ul>"+items+"</ul></div>";
+ }).join("");
+ document.getElementById("summary").innerHTML=(nb?"<span class='tag gap'>缺人／待補 "+nb+" 項</span>":"<span class='tag'>班表成立條件全數通過</span>")+(np?"<span class='tag warn'>待核對 "+np+" 項</span>":"");
+}
+
+const ed=document.getElementById("editor");
+function openEditor(pid,d){
+ const p=STAFF.find(x=>x.id===pid);const a=plan[pid][d]||["","",""];
+ const opt=(list,val,blank)=>(blank!==undefined?"<option value=''>"+blank+"</option>":"")+list.map(v=>"<option value='"+v[0]+"'"+(v[0]===val?" selected":"")+">"+v[1]+"</option>").join("");
+ const shiftOpts=Object.entries(SHIFTS).map(([k,v])=>[k,v.t]);
+ const posOpts=POSTS.map(x=>[x,x+(p.sk.includes(x)?"":"（不會）")]);
+ ed.innerHTML="<strong>"+p.n+"・"+DAYS[d][0]+"（"+DAYS[d][1]+"）</strong>"+
+  "<label for='ed-shift'>班別<select id='ed-shift'>"+opt(shiftOpts,a[0],"X 休")+"</select></label>"+
+  "<label for='ed-l'>午餐崗位<select id='ed-l'>"+opt(posOpts,a[1],"—")+"</select></label>"+
+  "<label for='ed-d'>晚餐崗位<select id='ed-d'>"+opt(posOpts,a[2],"—")+"</select></label>"+
+  "<button type='button' id='ed-close'>完成</button>";
+ ed.hidden=false;
+ const upd=()=>{const s=document.getElementById("ed-shift").value;plan[pid][d]=s?[s,document.getElementById("ed-l").value,document.getElementById("ed-d").value]:null;save();render()};
+ ["ed-shift","ed-l","ed-d"].forEach(id=>document.getElementById(id).addEventListener("change",upd));
+ document.getElementById("ed-close").addEventListener("click",()=>{ed.hidden=true});
+ document.getElementById("ed-shift").focus();
+}
+document.getElementById("roster").addEventListener("click",e=>{const c=e.target.closest("td.cell");if(c)openEditor(c.dataset.p,+c.dataset.d)});
+document.getElementById("roster").addEventListener("keydown",e=>{const c=e.target.closest("td.cell");if(c&&(e.key==="Enter"||e.key===" ")){e.preventDefault();openEditor(c.dataset.p,+c.dataset.d)}});
+document.getElementById("reset").addEventListener("click",()=>{plan=JSON.parse(JSON.stringify(SAMPLE));save();ed.hidden=true;render()});
+render();
+</script>
